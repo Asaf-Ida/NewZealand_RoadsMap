@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>New Zealand roads map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="css/leaflet.css">
+    <script src="js/leaflet.js"></script>
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+        }
+        html, body, #map {
+            height: 100%;
+            width: 100%;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            width: 10em;
+        }
+        .info h4 {
+            margin: 0 0 5px;
+            color: #777777;
+        }
+        .info #current_feature {
+            margin: 6px 0;
+        }
+        .popup {
+            text-align: center;
+        }        
+        .legend {
+            padding: 6px 8px;
+            background-color: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .legend div {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        div.legend.leaflet-control br {
+            clear: both;
+        }
+        .description {
+            margin: auto;
+            display: block;
+            font-size: 16px;
+            color: #333333;
+            font-family: "Open Sans", Helvetica, sans-serif;
+            padding: 10px 14px;
+            background-color: rgba(245,245,220,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            border: 1px solid grey;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+// Map    
+let map = L.map("map").setView([-41, 174], 6);
+
+// Basemap
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", 
+            {attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}
+            ).addTo(map);
+
+// Information box
+let info = L.control({position: "topright"});
+info.onAdd = function() {
+    let div = L.DomUtil.create("div", "info");
+    div.innerHTML = '<h4>Road status</h4><p id="current_feature"></p>';
+    return div;
+};
+info.addTo(map);
+
+let geojson;
+let events_type = ['Services', 'Road Works', 'Flooding', 'Resurfacing', 'Public Event', 'Slip', 'Strong Winds',
+                    'Road Construction', 'Pavement Repairs', 'Crash', 'Maintenance', 'Other'];
+let impact = ['Road Closed', 'Delays', 'Road Restrictions', 'Caution', 'Vehicle Restrictions'];
+let colors = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00'];
+
+function stat_color(d) {
+    for(let i=0; i < impact.length; i++){
+        if(d === impact[i]){
+            return colors[i]
+        }
+    }
+}
+
+function stat_style(feature) {
+    return {
+        weight: 5,
+        opacity: 1,
+        color: stat_color(feature.properties.impact),
+        fillOpacity: 0.7
+    };
+}
+
+let highlightStyle = {
+    weight: 7,
+    color: "yellow",
+    fillOpacity: 0.5
+};
+
+let info_p = document.getElementById("current_feature");
+
+function highlight_feature(e) {
+    e.target.setStyle(highlightStyle);
+    e.target.bringToFront();
+    info_p.innerHTML =
+        e.target.feature.properties.status + "<br>" + 
+        e.target.feature.properties.eventIsland + "<br>" + 
+        e.target.feature.properties.eventType;
+}
+
+function reset_highlight(e) {
+    geojson.resetStyle(e.target);
+    info_p.innerHTML = "";
+}
+
+// Create Leaflet control object for legend
+let legend = L.control({position: "topleft"});
+
+// Function that runs when legend is added to map
+legend.onAdd = function() {
+
+    // Create <div> element and populate it with HTML
+    let div = L.DomUtil.create("div", "legend");        
+    div.innerHTML = 
+        '<h3>Roads condition in real time</h3>by Traffic Road Event Information System<br>' +
+        '<small>NZ transportation agency</small><br>';
+        for(let i = 0; i < impact.length; i++) {
+        div.innerHTML += 
+          '<div style="background-color: ' + colors[i] + '"></div>' + 
+          impact[i] + '<br>';
+        }
+        // Return the legend <div> containing the HTML content
+        return div;
+        };
+        // Add Legend to Map
+        legend.addTo(map);
+
+        // add a description to the map
+        let description = L.control({position: "bottomleft"});
+        description.onAdd = function() {
+            let div = L.DomUtil.create("div", "description");
+            div.innerHTML = 
+                '<h2>Information about road events</h2><hr>' +
+                '<p><ul>'
+                for(let i = 0; i < events_type.length; i++){
+                    div.innerHTML += '<li>'+ events_type[i] +'</li>'
+                } + '</ul></p>';
+            div.innerHTML += '<hr><h4>Map author: Asaf Ida</h4>';
+            return div;
+        };
+        description.addTo(map);
+
+let url = 'https://services.arcgis.com/CXBb7LAjgIIdcsPt/arcgis/rest/services/NZTA_Highway_Information/FeatureServer/1/query?outFields=*&where=1%3D1&f=geojson'
+fetch(url)
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
+        geojson = L.geoJSON(data, {
+            style: stat_style,
+            onEachFeature: function(feature, layer) {
+                layer.addEventListener("mouseover", highlight_feature);
+                layer.addEventListener("mouseout", reset_highlight);
+                layer.bindPopup(
+                    '<div class="popup">Cause of event: <b>' + 
+                    feature.properties.eventDescription +
+                    '</b></div>');
+            }
+        }).addTo(map);           
+    });
+    </script>
+</body>
+</html>
